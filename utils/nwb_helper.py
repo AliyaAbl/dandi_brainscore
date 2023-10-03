@@ -1,21 +1,12 @@
 from datetime import datetime
 from uuid import uuid4
-from dateutil.tz import tzlocal
 import numpy as np
 import scipy.io
-import os, yaml, glob, json
+import os, glob, json
 import pandas as pd
-from nwbwidgets import nwb2widget
-import pynwb
-from pynwb import NWBHDF5IO, NWBFile, TimeSeries
-from pynwb.behavior import Position, SpatialSeries
-from pynwb.epoch import TimeIntervals
+from pynwb import NWBFile
 from pynwb.file import Subject
-from pynwb.misc import Units        
-from pynwb.ecephys import SpikeEventSeries
-import shutil
 import logging
-from tqdm import tqdm
 import pytz
 
 
@@ -120,47 +111,62 @@ def create_nwb(config, path):
     groups, count_groups = np.unique(names[:,0], return_counts =True)
     ids                  = names[:,1]
     counter              = 0
+    
     # create ElectrodeGroups A, B, C, ..
-    for group, count_group in zip(groups, count_groups):
-        electrode_group = nwbfile.create_electrode_group(
-            name        = "group_{}".format(group),
-            description = "Serialnumber: {}. Adapter Version: {}".format(config['array_info']['array_{}'.format(group)]['serialnumber'],\
-                            config['array_info']['array_{}'.format(group)]['adapterversion']),
-            device      = electrodes,
-            location    = 'hemisphere, region, subregion: '+str([config['array_info']['array_{}'.format(group)]['hemisphere'],\
-                                config['array_info']['array_{}'.format(group)]['region'],
-                                config['array_info']['array_{}'.format(group)]['subregion']]),
-            position    = config['array_info']['array_{}'.format(group)]['position']
-        )
-
-        # create Electrodes 001, 002, ..., 032 in ElectrodeGroups per channel
-        for ichannel in range(count_group):
-            nwbfile.add_electrode(
-                group       = electrode_group,
-                label       = ids[counter],
-                location    = 'row, col, elec'+str(json.loads(config['array_info']['intan_electrode_labeling_[row,col,id]'])[counter])
+    if len(groups) <= 6:
+        for group, count_group in zip(groups, count_groups):
+            electrode_group = nwbfile.create_electrode_group(
+                name        = "group_{}".format(group),
+                description = "Serialnumber: {}. Adapter Version: {}".format(config['array_info']['array_{}'.format(group)]['serialnumber'],\
+                                config['array_info']['array_{}'.format(group)]['adapterversion']),
+                device      = electrodes,
+                location    = 'hemisphere, region, subregion: '+str([config['array_info']['array_{}'.format(group)]['hemisphere'],\
+                                    config['array_info']['array_{}'.format(group)]['region'],
+                                    config['array_info']['array_{}'.format(group)]['subregion']]),
+                position    = config['array_info']['array_{}'.format(group)]['position']
             )
-            counter += 1     
 
-    ################ ADD SPIKE TIMES ###############################################
-    ################################################################################
+            # create Electrodes 001, 002, ..., 032 in ElectrodeGroups per channel
+            for ichannel in range(count_group):
+                nwbfile.add_electrode(
+                    group       = electrode_group,
+                    label       = ids[counter],
+                    location    = 'row, col, elec'+str(json.loads(config['array_info']['intan_electrode_labeling_[row,col,id]'])[counter])
+                )
+                counter += 1     
 
-    nwbfile.add_unit_column(name="unit", description="millisecond") 
-    for filename, i in zip(sorted(os.listdir(os.path.join(path, 'SpikeTimes'))), range(len(os.listdir(os.path.join(path, 'SpikeTimes'))))):
-        [assignment, number] = read_names(filename)
-        file_path = os.path.join(path, 'SpikeTimes', filename)
-        data = scipy.io.loadmat(file_path, squeeze_me=True,
-                        variable_names='spike_time_ms')['spike_time_ms']
-        nwbfile.add_unit(
-            spike_times = data, 
-            electrodes  = [i],
-            electrode_group = nwbfile.electrode_groups[f'group_{assignment}'], 
-            unit = 'ms'
-        )
+        ################ ADD SPIKE TIMES ###############################################
+        ################################################################################
+
+        nwbfile.add_unit_column(name="unit", description="millisecond") 
+        for filename, i in zip(sorted(os.listdir(os.path.join(path, 'SpikeTimes'))), range(len(os.listdir(os.path.join(path, 'SpikeTimes'))))):
+            [assignment, number] = read_names(filename)
+            file_path = os.path.join(path, 'SpikeTimes', filename)
+            data = scipy.io.loadmat(file_path, squeeze_me=True,
+                            variable_names='spike_time_ms')['spike_time_ms']
+            nwbfile.add_unit(
+                spike_times = data, 
+                electrodes  = [i],
+                electrode_group = nwbfile.electrode_groups[f'group_{assignment}'], 
+                unit = 'ms'
+            )
+    else:
+        nwbfile.add_unit_column(name="unit", description="millisecond") 
+        for filename, i in zip(sorted(os.listdir(os.path.join(path, 'SpikeTimes'))), range(len(os.listdir(os.path.join(path, 'SpikeTimes'))))):
+            [assignment, number] = read_names(filename)
+            file_path = os.path.join(path, 'SpikeTimes', filename)
+            data = scipy.io.loadmat(file_path, squeeze_me=True,
+                            variable_names='spike_time_ms')['spike_time_ms']
+            nwbfile.add_unit(
+                spike_times = data,
+                unit = 'ms'
+            )
+            
 
     ################ ADD TRIAL TIMES ###############################################
     ################################################################################
     last_spike = data[-1]
+    del data
     with open(os.path.join(path, 'NWBInfo.txt')) as f:
         lines = f.readlines()
         line1 = lines[0].split(',')[0]
