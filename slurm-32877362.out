@@ -1,16 +1,0 @@
-node056.cm.cluster
-Processing ...:   0%|          | 0/201 [00:00<?, ?it/s]/home/aliya277/anaconda3/envs/dandibs/lib/python3.10/site-packages/pynwb/file.py:471: UserWarning: Date is missing timezone information. Updating to local timezone.
-  args_to_set['session_start_time'] = _add_missing_timezone(session_start_time)
-Processing ...:   0%|          | 0/201 [00:09<?, ?it/s]
-NWB file created.
-Traceback (most recent call last):
-  File "/weka/scratch/weka/dicarlo/aliya277/dandi_brainscore/main.py", line 29, in <module>
-    file = h5py.File(os.path.join(path, 'h5Files', filename),'r+')
-  File "/home/aliya277/anaconda3/envs/dandibs/lib/python3.10/site-packages/h5py/_hl/files.py", line 567, in __init__
-    fid = make_fid(name, mode, userblock_size, fapl, fcpl, swmr=swmr)
-  File "/home/aliya277/anaconda3/envs/dandibs/lib/python3.10/site-packages/h5py/_hl/files.py", line 233, in make_fid
-    fid = h5f.open(name, h5f.ACC_RDWR, fapl=fapl)
-  File "h5py/_objects.pyx", line 54, in h5py._objects.with_phil.wrapper
-  File "h5py/_objects.pyx", line 55, in h5py._objects.with_phil.wrapper
-  File "h5py/h5f.pyx", line 106, in h5py.h5f.open
-BlockingIOError: [Errno 11] Unable to open file (unable to lock file, errno = 11, error message = 'Resource temporarily unavailable')
