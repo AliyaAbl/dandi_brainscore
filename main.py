@@ -1,3 +1,4 @@
+print('loading')
 import os, yaml
 from tqdm import tqdm 
 from pynwb import NWBHDF5IO
@@ -11,6 +12,7 @@ stop_time   = 300
 timebin     = 10
 counter     = 0
 
+print('closing files')
 import gc
 for obj in gc.get_objects():   # Browse through ALL objects
     if isinstance(obj, h5py.File):   # Just HDF5 files
@@ -20,6 +22,7 @@ for obj in gc.get_objects():   # Browse through ALL objects
 
 print('Running Main Script.')
 
+os.chdir(inventory)
 for folder, num_file in (zip(os.listdir(inventory), range(len(os.listdir(inventory))))):
     print(f"Folder: {num_file}/{len(os.listdir(inventory))}")
 
@@ -54,6 +57,9 @@ for folder, num_file in (zip(os.listdir(inventory), range(len(os.listdir(invento
 
     try: io.close()
     except:pass
+
+    if os.path.isfile(os.path.join(path, f"{SessionName}.nwb")):
+        os.remove(os.path.join(path, f"{SessionName}.nwb"))
 
     io = NWBHDF5IO(os.path.join(path, f"{SessionName}.nwb"), "w") 
     io.write(nwbfile)
