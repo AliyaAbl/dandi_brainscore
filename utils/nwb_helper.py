@@ -17,35 +17,21 @@ def read_names(filename):
 
 def create_nwb(config, path):
 
-    SessionDate = path.split('/')[-1].split('.')[-2].split('_')[0]
-    SessionTime = path.split('/')[-1].split('.')[-2].split('_')[1]
-    SubjectName = path.split('/')[-1].split('.')[1].split('_')[1]
-    date_format = "%Y%m%d %H%M%S"
-
-    if config['subject']['subject_id'].lower() != SubjectName.lower():
-        raise ValueError("Subject Name incorrect.")
-    
-    session_start_time_ = datetime.strptime(SessionDate+' '+SessionTime, date_format)
-    # Define the timezone you want to use (e.g., 'US/Eastern' for Boston)
     desired_timezone = pytz.timezone('US/Eastern')
-    session_start_time = desired_timezone.localize(session_start_time_)
-
 
     ################ CREATE NWB FILE WITH METADATA ################################
     ###############################################################################
     nwbfile = NWBFile(
         session_description     = config['session_info']['session_description'],
         identifier              = config['metadata']['identifier'],
-        session_start_time      = session_start_time,
-        file_create_date        = config['metadata']['file_create_date'],
+        session_start_time      = desired_timezone.localize(config['metadata']['session_start_time']),
+        file_create_date        = desired_timezone.localize(config['metadata']['file_create_date']),
         experimenter            = config['general']['lab_info']['experimenter'],
         experiment_description  = config['general']['experiment_info']['experiment_description'],
         session_id              = config['session_info']['session_id'],
         lab                     = config['general']['lab_info']['lab'],                     
         institution             = config['general']['lab_info']['institution'],                                    
         keywords                = config['general']['experiment_info']['keywords'],
-        protocol                = config['general']['experiment_info']['protocol'],
-        related_publications    = config['general']['experiment_info']['related_publications'],
         surgery                 = config['general']['experiment_info']['surgery']
     )
 
@@ -111,81 +97,88 @@ def create_nwb(config, path):
     groups, count_groups = np.unique(names[:,0], return_counts =True)
     ids                  = names[:,1]
     counter              = 0
-    
     # create ElectrodeGroups A, B, C, ..
-    if len(groups) <= 6:
-        for group, count_group in zip(groups, count_groups):
-            electrode_group = nwbfile.create_electrode_group(
-                name        = "group_{}".format(group),
-                description = "Serialnumber: {}. Adapter Version: {}".format(config['array_info']['array_{}'.format(group)]['serialnumber'],\
-                                config['array_info']['array_{}'.format(group)]['adapterversion']),
-                device      = electrodes,
-                location    = 'hemisphere, region, subregion: '+str([config['array_info']['array_{}'.format(group)]['hemisphere'],\
-                                    config['array_info']['array_{}'.format(group)]['region'],
-                                    config['array_info']['array_{}'.format(group)]['subregion']]),
-                position    = config['array_info']['array_{}'.format(group)]['position']
-            )
+    for group, count_group in zip(groups, count_groups):
+        if len(groups) == 6:
+            electrode_description = "Serialnumber: {}. Adapter Version: {}".format(config['array_info']['array_{}'.format(group)]['serialnumber'],\
+                            config['array_info']['array_{}'.format(group)]['adapterversion']),
+        else: 
+            electrode_description = "Serialnumber: {}".format(config['array_info']['array_{}'.format(group)]['serialnumber']),
+                
+        
+        electrode_group = nwbfile.create_electrode_group(
+            name        = "group_{}".format(group),
+            description = electrode_description[0],
+            device      = electrodes,
+            location    = 'hemisphere, region, subregion: '+str([config['array_info']['array_{}'.format(group)]['hemisphere'],\
+                                config['array_info']['array_{}'.format(group)]['region'],
+                                config['array_info']['array_{}'.format(group)]['subregion']]),
+            position    = config['array_info']['array_{}'.format(group)]['position']
+        )
 
-            # create Electrodes 001, 002, ..., 032 in ElectrodeGroups per channel
-            for ichannel in range(count_group):
-                nwbfile.add_electrode(
-                    group       = electrode_group,
-                    label       = ids[counter],
-                    location    = 'row, col, elec'+str(json.loads(config['array_info']['intan_electrode_labeling_[row,col,id]'])[counter])
-                )
-                counter += 1     
-
-        ################ ADD SPIKE TIMES ###############################################
-        ################################################################################
-
-        nwbfile.add_unit_column(name="unit", description="millisecond") 
-        for filename, i in zip(sorted(os.listdir(os.path.join(path, 'SpikeTimes'))), range(len(os.listdir(os.path.join(path, 'SpikeTimes'))))):
-            [assignment, number] = read_names(filename)
-            file_path = os.path.join(path, 'SpikeTimes', filename)
-            data = scipy.io.loadmat(file_path, squeeze_me=True,
-                            variable_names='spike_time_ms')['spike_time_ms']
-            nwbfile.add_unit(
-                spike_times = data, 
-                electrodes  = [i],
-                electrode_group = nwbfile.electrode_groups[f'group_{assignment}'], 
-                unit = 'ms'
+        # create Electrodes 001, 002, ..., 032 in ElectrodeGroups per channel
+        for ichannel in range(count_group):
+            nwbfile.add_electrode(
+                group       = electrode_group,
+                label       = ids[counter],
+                location    = 'row, col, elec'+str(json.loads(config['array_info']['intan_electrode_labeling_[row,col,id]'])[counter])
             )
-    else:
-        nwbfile.add_unit_column(name="unit", description="millisecond") 
-        for filename, i in zip(sorted(os.listdir(os.path.join(path, 'SpikeTimes'))), range(len(os.listdir(os.path.join(path, 'SpikeTimes'))))):
-            [assignment, number] = read_names(filename)
-            file_path = os.path.join(path, 'SpikeTimes', filename)
-            data = scipy.io.loadmat(file_path, squeeze_me=True,
-                            variable_names='spike_time_ms')['spike_time_ms']
-            nwbfile.add_unit(
-                spike_times = data,
-                unit = 'ms'
-            )
-            
+            counter += 1     
+
+    ################ ADD SPIKE TIMES ###############################################
+    ################################################################################
+
+    nwbfile.add_unit_column(name="unit", description="millisecond") 
+    for filename, i in zip(sorted(os.listdir(os.path.join(path, 'SpikeTimes'))), range(len(os.listdir(os.path.join(path, 'SpikeTimes'))))):
+        [assignment, number] = read_names(filename)
+        file_path = os.path.join(path, 'SpikeTimes', filename)
+        data = scipy.io.loadmat(file_path, squeeze_me=True,
+                        variable_names='spike_time_ms')['spike_time_ms']
+        nwbfile.add_unit(
+            spike_times = data, 
+            electrodes  = [i],
+            electrode_group = nwbfile.electrode_groups[f'group_{assignment}'], 
+            unit = 'ms'
+        )
 
     ################ ADD TRIAL TIMES ###############################################
     ################################################################################
     last_spike = data[-1]
     del data
-    with open(os.path.join(path, 'NWBInfo.txt')) as f:
-        lines = f.readlines()
-        line1 = lines[0].split(',')[0]
-        StimOnnOff = [float(line1.split('/')[0]),float(line1.split('/')[1])] 
-
-    on_start  = 0
-    on_dur    = StimOnnOff[1]
-    off_dur   = StimOnnOff[1]
-
     
-    nwbfile.add_trial_column(name="unit", description="millisecond")
-    while on_start < last_spike:
+    try: 
+        [on, off] = config['session_info']['session_description'].split(', ')[3].split(': ')[-1].split("/")
+        on_start  = 0
+        on_dur    = int(on)
+        off_dur   = int(off)
 
-        nwbfile.add_trial(
-            start_time= float(on_start),
-            stop_time = float(on_start+on_dur),
-            unit = 'ms')
-    
-        on_start += on_dur+off_dur
+        
+        nwbfile.add_trial_column(name="unit", description="millisecond")
+        while on_start < last_spike:
+
+            nwbfile.add_trial(
+                start_time= float(on_start),
+                stop_time = float(on_start+on_dur),
+                unit = 'ms')
+        
+            on_start += on_dur+off_dur
+    except: pass 
+
+    ################ ADD PSTH IF AVAIL #############################################
+    ################################################################################
+    if 'h5Files' in os.listdir(path):
+
+        filename = os.listdir(os.path.join(path, 'h5Files'))[0]
+        file = h5py.File(os.path.join(path, 'h5Files', filename),'r+') 
+        data = file['psth'][:]
+        file.close()
+
+        nwbfile.add_scratch(
+            data,
+            name="psth",
+            description="psth, uncorrected [stimuli x reps x timebins x channels]",
+            )
+        
 
     return nwbfile
 

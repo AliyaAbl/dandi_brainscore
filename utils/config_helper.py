@@ -1,78 +1,82 @@
-
 from dateutil.tz import tzlocal
-from datetime import datetime, date
+from datetime import datetime
 from uuid import uuid4
 import yaml
 import os
 import json
 import numpy as np
-from collections import OrderedDict
 from ruamel.yaml import YAML
+from utils.rhd_helper import read_header
+import configparser
 
 
-"""
-Config File Sarah RSVP. Please change anything that does not fit for your experiment.
-"""
-
-json_file_path          = os.path.join(os.getcwd(), '021023_pico_mapping_noCIT_adapter_version.json')
-weight                  = '0.02 kg'
-numimages               = 'x'
-imageset                = 'x'
-session_id              = 'x'
-nrep                    = 'x'
-stimon                  = 'x'
-stimoff                 = 'x'
-related_publications    = ['']
-adapter_serial          = 'x'
-
-
-def create_yaml(path):
-    f                   = open(json_file_path)
-    data                = json.load(f)
+def load_array_metadata(array_path):
+    array          = open(array_path)
+    data           = json.load(array)
+    
     bank_assignment     = np.unique(np.array(list(data['bank'].values())))              # unique for each group
+    indices             = []
+    for bank in bank_assignment:
+        indices.append(np.where(np.array(list(data['bank'].values()))==bank)[0][0])
+
     num_arrays          = len(bank_assignment)
-    adapter_versions    = np.unique(np.array(list(data['adapter_version'].values())))   # unique for each group
-    subregions          = np.unique(np.array(list(data['subregion'].values())))         # unique for each group
-    region              = np.unique(np.array(list(data['region'].values())))            # same for all
-    hemispheres         = np.unique(np.array(list(data['hemisphere'].values())))        # same for all
-    serialnumbers       = np.unique(np.array(list(data['arr'].values())))               # same for all
-    positions           = np.zeros((len(list(data['adapter_version'].values())), 3))    # row, col, number
+    subregions          = np.array(list(data['subregion'].values()))[indices]         # unique for each group
+    region              = np.array(list(data['region'].values()))[indices]            # same for all
+    hemispheres         = np.array(list(data['hemisphere'].values()))[indices]        # same for all
+    serialnumbers       = np.array(list(data['arr'].values()))[indices]               # same for all
+
+    positions           = np.zeros((len(list(data['subregion'].values())), 3))          # row, col, number
     positions[:,0]      = np.array(list(data['row'].values()))
     positions[:,1]      = np.array(list(data['col'].values()))
     positions[:,2]      = np.array(list(data['elec'].values()))
 
-    if len(adapter_versions)!= num_arrays: adapter_versions = np.repeat(adapter_versions, (num_arrays/len(adapter_versions)))
-    if len(subregions)      != num_arrays: subregions       = np.repeat(subregions, (num_arrays/len(subregions)))
-    if len(hemispheres)     != num_arrays: hemispheres      = np.repeat(hemispheres, (num_arrays/len(hemispheres)))
-    if len(region)          != num_arrays: region           = np.repeat(region, (num_arrays/len(region)))
-    if len(serialnumbers)   != num_arrays: serialnumbers    = np.repeat(serialnumbers, (num_arrays/len(serialnumbers)))
+    if num_arrays ==6:
+        adapter_versions    = np.array(list(data['adapter_version'].values()))[indices]
+        return subregions, hemispheres, region, serialnumbers, bank_assignment, positions, num_arrays, adapter_versions
+    
+    return subregions, hemispheres, region, serialnumbers, bank_assignment, positions, num_arrays
+       
+def load_rec_info(path):
+    with open(os.path.join(path,"RecInfo.yaml") , "r") as f:
+        return yaml.load(f, Loader = yaml.FullLoader)
 
+def load_intan_info(Rec_Info):
+    intan_info      = Rec_Info['intanproc'].split('/')[:-1]
+    intan_info[-2]  = 'intanraw'
+    intan_info_path = os.path.join('/', *intan_info, 'info.rhd')
+    fid = open(intan_info_path, 'rb')
+    return read_header(fid)
+
+def create_yaml(dir_path, array_metadata_path, adapter_info_avail=False):
+    
+    rec_info = load_rec_info(dir_path)
 
     config_dict = dict()
 
     config_dict['subject'] = {
                 'subject_id':   'pico',
-                'date_of_birth': datetime(2019, 12, 4, tzinfo = tzlocal()), #year, month, day
+                'date_of_birth': datetime(2000, 1, 1, tzinfo = tzlocal()), 
                 'sex':          'male',
-                'species':      'Macaca mulatta',
-                'weight':       weight
+                'species':      'Macaca mulatta'
                 }
     
+    text = 'Recording Information'
+    for item, value in zip(list(rec_info)[2:8], list(rec_info.values())[2:8]):
+        text += f', {item} : {value}'
+
     config_dict["session_info"] = {
-                'session_id': '{}'.format(session_id),
-                'session_description': 'Number of Repetitions: {}'.format(nrep),
+                'session_id': rec_info['SessionDate']+'_'+rec_info['Stimuli'],
+                'session_description': text,
                 }
     
-    config_dict['paths'] = {
-                    'intandata': '/braintree/data2/active/users/sgouldin/projects/oasis900/monkeys/pico/intanraw/pico_oasis900_230509_114338',
+    config_dict['SpikeTime path'] = {
+                    'intanproc': rec_info['intanproc'],
                     }
     
     config_dict['general'] ={
                 'experiment_info': {
-                    'experiment_description': 'Task: Rapid serial visual presentation (RSVP). Trial: Try 8 images - {} ms on, {} ms grey buch check mworks file for specifics. Reward: juice reward after every trial. Imageset: {} Images of {}'.format(stimon, stimoff, numimages, imageset),
+                    'experiment_description': f'Task: Rapid serial visual presentation (RSVP).',
                     'keywords': ['Vistual Stimuli', 'Object Recognition', 'Inferior temporal cortex (IT)', 'Ventral visual pathway'],
-                    'related_publications': related_publications,
-                    'protocol': 'Rapid serial visual presentation (RSVP)', 
                     'surgery' : '3x Utah Array Implant + Headpost',
                     },
                 'lab_info': {
@@ -112,23 +116,51 @@ def create_yaml(path):
                 
     config_dict['metadata'] = {
                     'nwb_version' : '2.6.0',
-                    'file_create_date': datetime.now(tzlocal()),
+                    'file_create_date': datetime.strptime(rec_info['SessionDate'], "%Y%m%d"),
                     'identifier': str(uuid4()), 
-                    'session_start_time':datetime.now(tzlocal())
+                    'session_start_time':datetime.strptime(rec_info['SessionDate']+rec_info['SessionTime'], "%Y%m%d%H%M%S")
                     }
+
+    config_dict['PSTH info'] = {}
+
+    psth_info = configparser.ConfigParser()
+    psth_info.read('/braintree/data2/active/users/sgouldin/spike-tools-chong/spike_tools/spike_config.ini')
+    for option in psth_info.options('PSTH'):
+        config_dict['PSTH info'][option] = psth_info.get('PSTH', option)
+
+    config_dict['Filtering info'] = {}
+
+    for option in psth_info.options('Filtering'):
+        config_dict['Filtering info'][option] = psth_info.get('Filtering', option)
                 
+    
+    if adapter_info_avail == True:
+        subregions, hemispheres, region, serialnumbers, bank_assignment, positions, num_arrays, adapter_versions = load_array_metadata(array_metadata_path)
+    else:
+        subregions, hemispheres, region, serialnumbers, bank_assignment, positions, num_arrays = load_array_metadata(array_metadata_path)
+    
     config_dict['array_info'] = {'intan_electrode_labeling_[row,col,id]':json.dumps(positions.tolist())}
 
-    for arr, i in zip(bank_assignment, range(num_arrays)) :
-            config_dict['array_info']['array_{}'.format(arr)] = {
-                        'position': [0.0,0.0,0.0],
-                        'serialnumber':     str(serialnumbers[i]),
-                        'adapterversion':   str(adapter_versions[i]),
-                        'hemisphere':       str(hemispheres[i]),
-                        'region':           str(region[i]),
-                        'subregion':        str(subregions[i]),
-                        }  
+    if num_arrays == 6:
+        for arr, i in zip(bank_assignment, range(num_arrays)) :
+                config_dict['array_info']['array_{}'.format(arr)] = {
+                            'position': [0.0,0.0,0.0],
+                            'serialnumber':     str(serialnumbers[i]),
+                            'adapterversion':   str(adapter_versions[i]),
+                            'hemisphere':       str(hemispheres[i]),
+                            'region':           str(region[i]),
+                            'subregion':        str(subregions[i]),
+                            }  
+    else:
+         for arr, i in zip(bank_assignment, range(num_arrays)) :
+                config_dict['array_info']['array_{}'.format(arr)] = {
+                            'position': [0.0,0.0,0.0],
+                            'serialnumber':     str(serialnumbers[i]),
+                            'hemisphere':       str(hemispheres[i]),
+                            'region':           str(region[i]),
+                            'subregion':        str(subregions[i]),
+                            }  
 
     yaml = YAML()
-    with open(os.path.join(path,"config_nwb.yaml"), 'w') as yamlfile:
-        data = yaml.dump((config_dict), yamlfile)
+    with open(os.path.join(dir_path,f"config_nwb.yaml"), 'w') as yamlfile:
+        yaml.dump((config_dict), yamlfile)
