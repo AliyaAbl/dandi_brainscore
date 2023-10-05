@@ -8,7 +8,7 @@ from pynwb import NWBFile
 from pynwb.file import Subject
 import logging
 import pytz
-
+import h5py
 
 def read_names(filename):
     assignment  = filename.split('.')[0].split('-')[1]
@@ -42,6 +42,7 @@ def create_nwb(config, path):
         date_of_birth= config['subject']['date_of_birth'],
         species     = config['subject']['species'],
         sex         = config['subject']['sex'],
+        description = config['subject']['description'],
     )
 
     ################ CREATE HARDWARE LINKS #########################################

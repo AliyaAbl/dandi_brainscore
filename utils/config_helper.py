@@ -55,9 +55,10 @@ def create_yaml(dir_path, array_metadata_path, adapter_info_avail=False):
 
     config_dict['subject'] = {
                 'subject_id':   'pico',
-                'date_of_birth': datetime(2000, 1, 1, tzinfo = tzlocal()), 
-                'sex':          'male',
-                'species':      'Macaca mulatta'
+                'date_of_birth': datetime(2074, 6, 22, tzinfo = tzlocal()), 
+                'sex':          'M',
+                'species':      'Macaca mulatta',
+                'description':  'monkey'
                 }
     
     text = 'Recording Information'
