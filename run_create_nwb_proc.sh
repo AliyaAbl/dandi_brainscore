@@ -14,4 +14,4 @@
 
 hostname
 
-python main.py $SLURM_ARRAY_TASK_ID ${*:1}
+python create_proc_nwb.py $SLURM_ARRAY_TASK_ID ${*:1}
