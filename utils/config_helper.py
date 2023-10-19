@@ -8,6 +8,7 @@ import numpy as np
 from ruamel.yaml import YAML
 from utils.rhd_helper import read_header
 import configparser
+import pandas as pd
 
 
 def load_array_metadata(array_path):
@@ -47,7 +48,158 @@ def load_intan_info(Rec_Info):
     fid = open(intan_info_path, 'rb')
     return read_header(fid)
 
-def create_yaml(dir_path, array_metadata_path, adapter_info_avail=False):
+def load_excel_sarah():
+    df_sarah = pd.read_excel( '/braintree/home/aliya277/dandi_brainscore/Pipeline Monkey Schedule New.xlsx' ,sheet_name='pico' )
+    new_header = df_sarah.iloc[0]  
+    df_sarah = df_sarah[1:]       
+    df_sarah.columns = new_header  
+    df_sarah = df_sarah.fillna('empty') 
+    return df_sarah
+
+def create_yaml(storage_dir, df, array_metadata_path, adapter_info_avail=False):
+
+    date = f"20{df['date']}"
+    if len(str(df['time'])) != 6: time = f"0{df['time']}"
+    else: time = str(df['time'])
+    
+    if df['ImageSet'] == 'normalizers':
+        directory = f'norm_FOSS.sub_pico.{date}_{time}.proc'
+    elif df['ImageSet'] == 'normalizers-HVM':
+        directory = f'norm_HVM.sub_pico.{date}_{time}.proc'
+    else: 
+        directory = f"exp_{df['ImageSet']}.sub_pico.{date}_{time}.proc"
+
+    imagesetdir = os.path.join(storage_dir, ".".join(directory.split(".")[0:1]))
+    subjectdir  = os.path.join(storage_dir, imagesetdir, ".".join(directory.split(".")[0:2]))
+
+    config_dict = dict()
+
+    config_dict['subject'] = {
+                'subject_id':   'pico',
+                'date_of_birth': datetime(2014, 6, 22, tzinfo = tzlocal()), 
+                'sex':          'M',
+                'species':      'Macaca mulatta',
+                'description':  'monkey'
+                }
+    
+    config_dict['general'] ={
+                'experiment_info': {
+                    'experiment_description': f'Task: Rapid serial visual presentation (RSVP).',
+                    'keywords': ['Vistual Stimuli', 'Object Recognition', 'Inferior temporal cortex (IT)', 'Ventral visual pathway'],
+                    'surgery' : '3x Utah Array Implant + Headpost',
+                    },
+                'lab_info': {
+                    'university':  'Massachusetts Institute of Technology',
+                    'institution': 'McGovern Institute for Brain Research',
+                    'lab': 'DiCarlo',
+                    'experimenter': 'Goulding, Sarah',
+                    }
+                }
+
+    config_dict['hardware'] = {
+                    'electrode_name': 'Electrode',
+                    'electrode_description': 'Utah CerePort Array with a single electrode array',
+                    'electrode_manuf': '2020 Blackrock Microsystems, LLC',
+                    'system_name': 'RecordingSystem',
+                    'system_description': 'RHD Recording System',
+                    'system_manuf': '2010-2023 Intan Technologies', 
+                    'adapter_name': 'Utah Array Pedestal Connector',
+                    'adapter_description': 'Connects Utah Pedestal to Intan RHD Recording System',
+                    'adapter_manuf': 'Ripple Neuro', 
+                    'photodiode_name': 'DET36A2 Biased Si Detector',
+                    'photodiode_description': 'Photodiode for detecting image presentation times. Comes with DET2A Power Adapter',
+                    'photodiode_manuf': 'Thorlabs Inc.', 
+                    'monitor_name': 'LG UltraGear',
+                    'monitor_description': 'LG 32GP850-B 32 UltraGear QHD (2560 x 1440) Nano IPS Gaming Monitor w/ 1ms (GtG) Response Time & 165Hz Refresh Rate.\
+                        Manually color calibrated and set to 120 HZ refresh rate.',
+                    'monitor_manuf': 'LG', 
+                    }
+    
+    config_dict['software'] ={
+                    'mwclient_version': 'Version 0.11 (2022.02.15)',
+                    'mwserver_version': 'Version 0.11 (2022.02.15)',
+                    'OS': 'macOS Monterery on MAC Pro (Late 2013)',
+                    'intan_version': 'Version 3.1.0'
+                    }
+   
+                
+    config_dict['metadata'] = {
+                    'nwb_version' : '2.6.0',
+                    'file_create_date': datetime.strptime(date, "%Y%m%d"),
+                    'identifier': str(uuid4()), 
+                    'session_start_time':datetime.strptime(date+time, "%Y%m%d%H%M%S")
+                    }
+    
+    
+    config_dict['paths'] = {
+                    'SpikeTime': df['Path: SpikeTimes'],
+                    'psth': df['Path: h5'],
+                    }
+
+    df_sarah = load_excel_sarah()
+    text = 'Recording Information'
+    try:
+        rec_info = df_sarah.iloc[int(df['(excel) Index'])-3][2:14]
+        text += str(rec_info)
+
+    except: pass
+
+    config_dict["session_info"] = {
+                'session_id': directory,
+                'session_description': text,
+                }
+    
+
+    config_dict['PSTH info'] = {}
+
+    psth_info = configparser.ConfigParser()
+    psth_info.read('/braintree/data2/active/users/sgouldin/spike-tools-chong/spike_tools/spike_config.ini')
+    for option in psth_info.options('PSTH'):
+        config_dict['PSTH info'][option] = psth_info.get('PSTH', option)
+
+    config_dict['Filtering info'] = {}
+
+    for option in psth_info.options('Filtering'):
+        config_dict['Filtering info'][option] = psth_info.get('Filtering', option)
+                
+    
+    if adapter_info_avail == True:
+        subregions, hemispheres, region, serialnumbers, bank_assignment, positions, num_arrays, adapter_versions = load_array_metadata(array_metadata_path)
+    else:
+        subregions, hemispheres, region, serialnumbers, bank_assignment, positions, num_arrays = load_array_metadata(array_metadata_path)
+    
+    config_dict['array_info'] = {'intan_electrode_labeling_[row,col,id]':json.dumps(positions.tolist())}
+
+    if num_arrays == 6:
+        for arr, i in zip(bank_assignment, range(num_arrays)) :
+                config_dict['array_info']['array_{}'.format(arr)] = {
+                            'position': [0.0,0.0,0.0],
+                            'serialnumber':     str(serialnumbers[i]),
+                            'adapterversion':   str(adapter_versions[i]),
+                            'hemisphere':       str(hemispheres[i]),
+                            'region':           str(region[i]),
+                            'subregion':        str(subregions[i]),
+                            }  
+    else:
+         for arr, i in zip(bank_assignment, range(num_arrays)) :
+                config_dict['array_info']['array_{}'.format(arr)] = {
+                            'position': [0.0,0.0,0.0],
+                            'serialnumber':     str(serialnumbers[i]),
+                            'hemisphere':       str(hemispheres[i]),
+                            'region':           str(region[i]),
+                            'subregion':        str(subregions[i]),
+                            }  
+
+    yaml = YAML()
+    with open(os.path.join(subjectdir,directory,f"config_nwb.yaml"), 'w') as yamlfile:
+        yaml.dump((config_dict), yamlfile)
+
+
+
+
+
+
+def create_yaml_old(dir_path, array_metadata_path, adapter_info_avail=False):
     
     rec_info = load_rec_info(dir_path)
 
@@ -55,7 +207,7 @@ def create_yaml(dir_path, array_metadata_path, adapter_info_avail=False):
 
     config_dict['subject'] = {
                 'subject_id':   'pico',
-                'date_of_birth': datetime(2074, 6, 22, tzinfo = tzlocal()), 
+                'date_of_birth': datetime(2014, 6, 22, tzinfo = tzlocal()), 
                 'sex':          'M',
                 'species':      'Macaca mulatta',
                 'description':  'monkey'

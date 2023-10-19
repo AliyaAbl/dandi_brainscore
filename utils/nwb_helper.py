@@ -172,6 +172,7 @@ def create_nwb(config, path):
         filename = os.listdir(os.path.join(path, 'h5Files'))[0]
         file = h5py.File(os.path.join(path, 'h5Files', filename),'r+') 
         data = file['psth'][:]
+        meta = np.array([np.array(file['meta']['start_time_ms']), np.array(file['meta']['stop_time_ms']), np.array(file['meta']['tb_ms'])])
         file.close()
 
         nwbfile.add_scratch(
@@ -180,6 +181,11 @@ def create_nwb(config, path):
             description="psth, uncorrected [stimuli x reps x timebins x channels]",
             )
         
+        nwbfile.add_scratch(
+                meta,
+                name="psth meta",
+                description="start_time_ms, stop_time_ms, tb_ms",
+                )
 
     return nwbfile
 
