@@ -71,6 +71,7 @@ def create_yaml(storage_dir, df, array_metadata_path, adapter_info_avail=False):
 
     imagesetdir = os.path.join(storage_dir, ".".join(directory.split(".")[0:1]))
     subjectdir  = os.path.join(storage_dir, imagesetdir, ".".join(directory.split(".")[0:2]))
+    subjectdir_date  = os.path.join(subjectdir, ".".join(directory.split(".")[0:2])+'.'+date)
 
     config_dict = dict()
 
@@ -133,16 +134,18 @@ def create_yaml(storage_dir, df, array_metadata_path, adapter_info_avail=False):
     
     config_dict['paths'] = {
                     'SpikeTime': df['Path: SpikeTimes'],
-                    'psth': df['Path: h5'],
+                    'psth': df['Path: psth'],
+                    'h5': df['Path: h5'],
                     }
 
     df_sarah = load_excel_sarah()
     text = 'Recording Information'
     try:
         rec_info = df_sarah.iloc[int(df['(excel) Index'])-3][2:14]
-        text += str(rec_info)
-
-    except: pass
+        for ele in (str(rec_info).split('\n')[1:-1]):
+            try:  text += f", {ele.split(' ')[0]} : {ele.split(' ')[-1]}"
+            except: pass
+    except:pass
 
     config_dict["session_info"] = {
                 'session_id': directory,
@@ -191,10 +194,8 @@ def create_yaml(storage_dir, df, array_metadata_path, adapter_info_avail=False):
                             }  
 
     yaml = YAML()
-    with open(os.path.join(subjectdir,directory,f"config_nwb.yaml"), 'w') as yamlfile:
+    with open(os.path.join(subjectdir_date,directory,f"config_nwb.yaml"), 'w') as yamlfile:
         yaml.dump((config_dict), yamlfile)
-
-
 
 
 

@@ -15,6 +15,7 @@ def read_names(filename):
     number      = filename.split('.')[0].split('-')[2]
     return np.asarray([assignment, number])
 
+
 def create_nwb(config, path):
 
     desired_timezone = pytz.timezone('US/Eastern')
@@ -167,18 +168,20 @@ def create_nwb(config, path):
 
     ################ ADD PSTH IF AVAIL #############################################
     ################################################################################
-    if 'h5Files' in os.listdir(path):
 
-        filename = os.listdir(os.path.join(path, 'h5Files'))[0]
-        file = h5py.File(os.path.join(path, 'h5Files', filename),'r+') 
-        data = file['psth'][:]
-        meta = np.array([np.array(file['meta']['start_time_ms']), np.array(file['meta']['stop_time_ms']), np.array(file['meta']['tb_ms'])])
-        file.close()
+    
+
+    if 'psth' in os.listdir(path):
+        psthpath = path+'/psth/'+os.listdir(path+'/psth')[0]
+        psth = scipy.io.loadmat(psthpath)
+        data = psth['psth']
+        start_time_ms, stop_time_ms, tb_ms = psth['meta'][0][0]
+        meta = [start_time_ms.flatten()[0], stop_time_ms.flatten()[0], tb_ms.flatten()[0]]
 
         nwbfile.add_scratch(
             data,
             name="psth",
-            description="psth, uncorrected [stimuli x reps x timebins x channels]",
+            description="psth [stimuli x reps x timebins x channels]",
             )
         
         nwbfile.add_scratch(
@@ -187,7 +190,95 @@ def create_nwb(config, path):
                 description="start_time_ms, stop_time_ms, tb_ms",
                 )
 
+    # if 'h5Files' in os.listdir(path):
+    #     if len(os.listdir(os.path.join(path, 'h5Files'))) != 0:
+
+    #         filename = os.listdir(os.path.join(path, 'h5Files'))[0]
+    #         file = h5py.File(os.path.join(path, 'h5Files', filename),'r+') 
+    #         data = file['psth'][:]
+    #         meta = np.array([np.array(file['meta']['start_time_ms']), np.array(file['meta']['stop_time_ms']), np.array(file['meta']['tb_ms'])])
+    #         file.close()
+
+    #         nwbfile.add_scratch(
+    #             data,
+    #             name="psth",
+    #             description="psth, uncorrected [stimuli x reps x timebins x channels]",
+    #             )
+            
+    #         nwbfile.add_scratch(
+    #                 meta,
+    #                 name="psth meta",
+    #                 description="start_time_ms, stop_time_ms, tb_ms",
+    #                 )
+
     return nwbfile
+
+
+def calc_psth(nwbfile, mworks_dir, start_time_ms, stop_time_ms, tb_ms, n_stimuli = None):
+    start_time_ms = int(start_time_ms)
+    stop_time_ms  = int(stop_time_ms) 
+    tb_ms         = int(tb_ms)
+
+    ################ MODIFIED FROM THE SPIKE-TOOLS-CHONG CODE ######################
+    ################################################################################
+
+    mwk_data = pd.read_csv(mworks_dir)
+    mwk_data = mwk_data[mwk_data.fixation_correct == 1]
+    if 'photodiode_on_us' in mwk_data.keys():
+        samp_on_ms = np.asarray(mwk_data['photodiode_on_us']) / 1000.
+        logging.info('Using photodiode signal for sample on time')
+    else:
+        samp_on_ms = np.asarray(mwk_data['samp_on_us']) / 1000.
+        logging.info('Using MWorks digital signal for sample on time')
+
+    # Load spikeTime file for current channel
+    spikeTimes = nwbfile.units[:].spike_times
+    # Re-order the psth to image x reps
+    max_number_of_reps = max(np.bincount(mwk_data['stimulus_presented']))  # Max reps obtained for any image
+    if max_number_of_reps == 0:
+        exit()
+    mwk_data['stimulus_presented'] = mwk_data['stimulus_presented'].astype(int)  # To avoid indexing errors
+
+    if n_stimuli is None:
+            image_numbers = np.unique(mwk_data['stimulus_presented'])  # TODO: if not all images are shown (for eg, exp cut short), you'll have to manually type in total # images
+    else:
+        image_numbers = np.arange(1,n_stimuli+1) # all of my image starts with #1
+
+    timebase = np.arange(start_time_ms, stop_time_ms, tb_ms)
+    PSTH = np.full((len(image_numbers), max_number_of_reps, len(timebase),spikeTimes.shape[0]), np.nan)
+
+    for num in range(spikeTimes.shape[0]):
+        spikeTime = np.asanyarray(spikeTimes[num])
+        osamp = 10
+        psth_bin = np.zeros((len(samp_on_ms), osamp*(stop_time_ms-start_time_ms)))
+        psth_matrix = np.full((len(samp_on_ms), len(timebase)), np.nan)
+
+        for i in range(len(samp_on_ms)):
+
+            sidx = np.floor(osamp*(spikeTime[(spikeTime>=(samp_on_ms[i]+start_time_ms))*(spikeTime<(samp_on_ms[i]+stop_time_ms))]-(samp_on_ms[i]+start_time_ms))).astype(int)
+            psth_bin[i, sidx] = 1
+            psth_matrix[i] = np.sum(np.reshape(psth_bin[i], [len(timebase), osamp*tb_ms]), axis=1)
+        
+        
+        psth = np.full((len(image_numbers), max_number_of_reps, len(timebase)), np.nan)  # Re-ordered PSTH
+
+        for i, image_num in enumerate(image_numbers):
+            index_in_table = np.where(mwk_data.stimulus_presented == image_num)[0]
+            selected_cells = psth_matrix[index_in_table, :]
+            psth[i, :selected_cells.shape[0], :] = selected_cells
+
+        logging.info(psth.shape)
+        # Save psth data
+        PSTH[:,:,:,num] = psth
+        
+    meta = {'start_time_ms': start_time_ms, 'stop_time_ms': stop_time_ms, 'tb_ms': tb_ms}
+    cmbined_psth = {'psth': PSTH, 'meta': meta}
+    return PSTH
+
+
+
+
+
 
 def get_psth_from_nwb(nwbfile, path, start_time, stop_time, timebin, n_stimuli=None):
 

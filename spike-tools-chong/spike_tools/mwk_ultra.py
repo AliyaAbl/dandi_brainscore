@@ -100,6 +100,7 @@ def get_events(filepath, names, time_range=[0, np.inf]):
     data_df = data_df.sort_values(by='time').reset_index(drop=True)
     return data_df
 
+
 def get_events_mac(event_file, name):
     data = {
         'code': [],
