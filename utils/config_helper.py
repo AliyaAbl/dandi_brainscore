@@ -56,18 +56,14 @@ def load_excel_sarah():
     df_sarah = df_sarah.fillna('empty') 
     return df_sarah
 
-def create_yaml(storage_dir, df, array_metadata_path, adapter_info_avail=False):
-
-    date = f"20{df['date']}"
-    if len(str(df['time'])) != 6: time = f"0{df['time']}"
-    else: time = str(df['time'])
+def create_yaml(storage_dir, imageset, subj, date, time, array_metadata_path, df = None, adapter_info_avail=False):
     
-    if df['ImageSet'] == 'normalizers':
+    if imageset == 'normalizers':
         directory = f'norm_FOSS.sub_pico.{date}_{time}.proc'
-    elif df['ImageSet'] == 'normalizers-HVM':
+    elif imageset == 'normalizers-HVM':
         directory = f'norm_HVM.sub_pico.{date}_{time}.proc'
     else: 
-        directory = f"exp_{df['ImageSet']}.sub_pico.{date}_{time}.proc"
+        directory = f"exp_{imageset}.sub_{subj}.{date}_{time}.proc"
 
     imagesetdir = os.path.join(storage_dir, ".".join(directory.split(".")[0:1]))
     subjectdir  = os.path.join(storage_dir, imagesetdir, ".".join(directory.split(".")[0:2]))
@@ -76,7 +72,7 @@ def create_yaml(storage_dir, df, array_metadata_path, adapter_info_avail=False):
     config_dict = dict()
 
     config_dict['subject'] = {
-                'subject_id':   'pico',
+                'subject_id':   subj,
                 'date_of_birth': datetime(2014, 6, 22, tzinfo = tzlocal()), 
                 'sex':          'M',
                 'species':      'Macaca mulatta',
@@ -130,29 +126,34 @@ def create_yaml(storage_dir, df, array_metadata_path, adapter_info_avail=False):
                     'identifier': str(uuid4()), 
                     'session_start_time':datetime.strptime(date+time, "%Y%m%d%H%M%S")
                     }
-    
-    
-    config_dict['paths'] = {
+
+    if type(df)==pd.core.series.Series:
+
+        config_dict['paths'] = {
                     'SpikeTime': df['Path: SpikeTimes'],
                     'psth': df['Path: psth'],
                     'h5': df['Path: h5'],
                     }
 
-    df_sarah = load_excel_sarah()
-    text = 'Recording Information'
-    try:
-        rec_info = df_sarah.iloc[int(df['(excel) Index'])-3][2:14]
-        for ele in (str(rec_info).split('\n')[1:-1]):
-            try:  text += f", {ele.split(' ')[0]} : {ele.split(' ')[-1]}"
-            except: pass
-    except:pass
+        df_sarah = load_excel_sarah()
+        text = 'Recording Information'
+        try:
+            rec_info = df_sarah.iloc[int(df['(excel) Index'])-3][2:14]
+            for ele in (str(rec_info).split('\n')[1:-1]):
+                try:  text += f", {ele.split(' ')[0]} : {ele.split(' ')[-1]}"
+                except: pass
+        except:pass
 
-    config_dict["session_info"] = {
+        config_dict["session_info"] = {
+                    'session_id': directory,
+                    'session_description': text,
+                    }
+    else:
+        config_dict["session_info"] = {
                 'session_id': directory,
-                'session_description': text,
+                'session_description': 'RSVP task',
                 }
-    
-
+        
     config_dict['PSTH info'] = {}
 
     psth_info = configparser.ConfigParser()

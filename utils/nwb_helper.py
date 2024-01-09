@@ -89,6 +89,8 @@ def create_nwb(config, path):
     )
 
     all_files = sorted(os.listdir(os.path.join(path, 'SpikeTimes')))
+    all_files = [item for item in all_files if not item.startswith('.')]
+
     
     name_accumulator = []
     for file in all_files:
@@ -131,11 +133,14 @@ def create_nwb(config, path):
     ################################################################################
 
     nwbfile.add_unit_column(name="unit", description="millisecond") 
-    for filename, i in zip(sorted(os.listdir(os.path.join(path, 'SpikeTimes'))), range(len(os.listdir(os.path.join(path, 'SpikeTimes'))))):
+
+    for filename, i in zip(all_files, range(len(all_files))):
         [assignment, number] = read_names(filename)
         file_path = os.path.join(path, 'SpikeTimes', filename)
-        data = scipy.io.loadmat(file_path, squeeze_me=True,
+        try: data = scipy.io.loadmat(file_path, squeeze_me=True,
                         variable_names='spike_time_ms')['spike_time_ms']
+        except:data = scipy.io.loadmat(file_path, squeeze_me=True,
+                        variable_names='spikeTime')['spikeTime']
         nwbfile.add_unit(
             spike_times = data, 
             electrodes  = [i],
@@ -175,7 +180,11 @@ def create_nwb(config, path):
         psthpath = path+'/psth/'+os.listdir(path+'/psth')[0]
         psth = scipy.io.loadmat(psthpath)
         data = psth['psth']
-        start_time_ms, stop_time_ms, tb_ms = psth['meta'][0][0]
+        try: start_time_ms, stop_time_ms, tb_ms = psth['meta'][0][0]
+        except: 
+            start_time_ms = psth['meta'][0][0][0][0]
+            stop_time_ms  = psth['meta'][0][0][1][0]
+            tb_ms         = psth['meta'][0][0][2][0]
         meta = [start_time_ms.flatten()[0], stop_time_ms.flatten()[0], tb_ms.flatten()[0]]
 
         nwbfile.add_scratch(
